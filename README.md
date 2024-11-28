@@ -1,4 +1,8 @@
-# money-map-web
+# Money Map
+
+A personal budgeting application for tracking expenses and income.
+
+![Money Map Dashboard](./public/dashboard_photo_2024_11.png)
 
 This template should help get you started developing with Vue 3 in Vite.
 

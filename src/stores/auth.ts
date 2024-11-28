@@ -19,8 +19,11 @@ export const useAuthStore = defineStore('auth', {
       try {
         const response = await api.post('/login', { email, password })
         const token = response.data.access_token
+        const refreshToken = response.data.refresh_token
 
         localStorage.setItem('auth_token', token)
+        localStorage.setItem('refresh_token', refreshToken)
+
         this.token = token
         this.isAuthenticated = true
 
@@ -32,26 +35,29 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async register(credentials: {
-        name: string
-        email: string
-        password: string
-        password_confirmation: string
-      }) {
-        try {
-          const response = await api.post('/register', credentials)
-          const token = response.data.access_token
+      name: string
+      email: string
+      password: string
+      password_confirmation: string
+    }) {
+      try {
+        const response = await api.post('/register', credentials)
+        const token = response.data.access_token
+        const refreshToken = response.data.refresh_token
 
-          localStorage.setItem('auth_token', token)
-          this.token = token
-          this.user = response.data.user
-          this.isAuthenticated = true
+        localStorage.setItem('auth_token', token)
+        localStorage.setItem('refresh_token', refreshToken)
 
-          return response
-        } catch (error) {
-          console.error('Registration error:', error)
-          throw error
-        }
-      },
+        this.token = token
+        this.user = response.data.user
+        this.isAuthenticated = true
+
+        return response
+      } catch (error) {
+        console.error('Registration error:', error)
+        throw error
+      }
+    },
 
     async logout() {
       try {
