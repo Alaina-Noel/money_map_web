@@ -4,6 +4,7 @@
     <MonthNavigation
       :current-month="currentMonthDisplay"
       @next="nextMonth"
+      @previous="previousMonth"
     />
 
     <IncomeOverview
@@ -29,8 +30,8 @@
     <AddIncomeModal
       v-if="showIncomeModal"
       :initial-data="newPaycheck"
-      @save="savePaycheck"
       @close="showIncomeModal = false"
+      @fetchDashboardData="fetchDashboardData"
     />
 
     <AddCategoryModal
@@ -47,6 +48,13 @@
       @save="saveLineItem"
       @delete="deleteLineItem"
       @close="showLineItemsModal = false"
+    />
+
+    <CopyCategoriesModal
+      :is-open="showCopyModal"
+      :month-display="currentMonthDisplay"
+      @copy-previous="copyPreviousMonth"
+      @start-fresh="handleStartFresh"
     />
   </div>
 </template>
@@ -67,23 +75,47 @@ import AddCategoryButton from '@/components/dashboard/AddCategoryButton.vue'
 import AddIncomeModal from '@/components/modals/AddIncomeModal.vue'
 import AddCategoryModal from '@/components/modals/AddCategoryModal.vue'
 import LineItemsModal from '@/components/modals/LineItemsModal.vue'
+import CopyCategoriesModal from '@/components/modals/CopyCategoriesModal.vue'
 import { useAuthStore } from '@/stores/auth'
 
-// Remove duplicate state declarations
-// Keep only one instance of each ref/computed
+interface Category {
+  id: number;
+  name: string;
+  expected_amount: number;
+  actual_amount: number;
+}
+
+interface DashboardData {
+  current_month: {
+    expected_income: number;
+    actual_income: number;
+    total_budgeted: number;
+    total_spent: number;
+    remaining_budget: number;
+  };
+  spending_by_category: Category[];
+}
+
+interface Category {
+  id: number;
+  name: string;
+  expected_amount: number;
+  actual_amount: number;
+}
 
 // State management
 const router = useRouter()
 const currentMonth = ref(dayjs())
-const categories = ref([])
-const dashboardData = ref(null)
+const categories = ref<Category[]>([])
+const dashboardData = ref<DashboardData | null>(null);
 const showAddCategoryModal = ref(false)
 const showIncomeModal = ref(false)
 const showLineItemsModal = ref(false)
-const selectedCategory = ref(null)
+const selectedCategory = ref<Category | null>(null);
 const lineItems = ref([])
 const newCategory = ref({ name: '', expected_amount: 0 })
 const newPaycheck = ref({ amount: 0, pay_date: '', source: '', notes: '' })
+const showCopyModal = ref(false)
 
 const currentMonthDisplay = computed(() => currentMonth.value.format('MMMM YYYY'))
 
@@ -99,13 +131,6 @@ const totalSpent = computed(() => {
   return dashboardData.value?.current_month?.total_spent ?? 0
 })
 
-const newLineItem = ref({
-  description: '',
-  amount: 0,
-  date: dayjs().format('YYYY-MM-DD'),
-  notes: ''
-})
-
 const getAuthHeaders = () => ({
   headers: {
     'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
@@ -115,58 +140,56 @@ const getAuthHeaders = () => ({
 // API methods
 const fetchDashboardData = async () => {
   try {
-    console.log('fetching data')
     const response = await api.get(
       `/budgets/${currentMonth.value.format('YYYY-MM')}/dashboard`,
       getAuthHeaders()
     );
-    console.log('response',response)
     console.log('response.data',response.data)
     dashboardData.value = response.data;
-    console.log('response.data.spending_by_category',response.data.spending_by_category)
     categories.value = response.data.spending_by_category;
   } catch (error) {
     console.error('Error fetching dashboard data:', error);
   }
 };
-
-const savePaycheck = async () => {
-  try {
-    await api.post('/paychecks', {
-      ...newPaycheck.value,
-      pay_date: dayjs(newPaycheck.value.pay_date).format('YYYY-MM-DD')
-    })
-
-    showIncomeModal.value = false
-    newPaycheck.value = { amount: 0, pay_date: '', source: '', notes: '' }
-    await fetchDashboardData()
-  } catch (error) {
-    console.error('Error saving paycheck:', error)
-  }
-}
-
-const nextMonth = () => {
-  currentMonth.value = currentMonth.value.add(1, 'month')
+const previousMonth = () => {
+  currentMonth.value = currentMonth.value.subtract(1, 'month')
   fetchDashboardData()
 }
 
-const deleteLineItem = async (lineItemId) => {
-  try {
-    await api.delete(`/line-items/${lineItemId}`)
-    await fetchLineItems(selectedCategory.value.id)
-    await fetchDashboardData() // Refresh category totals
-  } catch (error) {
-    console.error('Error deleting line item:', error)
-  }
-}
+const nextMonth = async () => {
+  currentMonth.value = currentMonth.value.add(1, 'month');
+  await fetchDashboardData();
 
-const viewLineItems = async (category) => {
+  // If no categories exist for this month, show the modal
+  if (dashboardData.value?.spending_by_category.length === 0) {
+    showCopyModal.value = true;
+  }
+};
+
+const handleStartFresh = () => {
+  showCopyModal.value = false;
+};
+
+const deleteLineItem = async (lineItemId: number) => {
+  try {
+    await api.delete(`/line-items/${lineItemId}`);
+
+    if (selectedCategory.value) {
+      await fetchLineItems(selectedCategory.value.id);
+      await fetchDashboardData();
+    }
+  } catch (error) {
+    console.error('Error deleting line item:', error);
+  }
+};
+
+const viewLineItems = async (category: Category) => {
   selectedCategory.value = category
   showLineItemsModal.value = true
   await fetchLineItems(category.id)
 }
 
-const fetchLineItems = async (categoryId) => {
+const fetchLineItems = async (categoryId: number) => {
   try {
     const response = await api.get(`/categories/${categoryId}/line-items`, {
       headers: {
@@ -179,7 +202,13 @@ const fetchLineItems = async (categoryId) => {
   }
 }
 
-const saveCategory = async (categoryData) => {
+interface NewCategory {
+  name: string;
+  expected_amount: number;
+  budget_month?: string;
+}
+
+const saveCategory = async (categoryData: NewCategory) => {
   try {
     await api.post('/categories', {
       ...categoryData,
@@ -197,10 +226,19 @@ const saveCategory = async (categoryData) => {
     console.error('Error saving category:', error)
   }
 }
-
+interface LineItemData {
+  name: string;
+  amount: number;
+  due_date?: string;
+  notes?: string;
+}
 // Update saveLineItem to include proper headers
-const saveLineItem = async (itemData) => {
+const saveLineItem = async (itemData: LineItemData) => {
   try {
+    if (!selectedCategory.value) {
+      console.error('No category selected');
+      return;
+    }
     await api.post('/line-items', {
       ...itemData,
       category_id: selectedCategory.value.id
@@ -218,14 +256,38 @@ const saveLineItem = async (itemData) => {
 }
 
 // Add a click handler to view transactions
-const editCategory = (category) => {
+const editCategory = (category: Category) => {
   viewLineItems(category)
 }
+
+const deleteCategory = async (categoryId: number) => {
+  try {
+    //todo: make this on the backend
+    await api.delete(`/categories/${categoryId}`, getAuthHeaders());
+    await fetchDashboardData();
+  } catch (error) {
+    console.error('Error deleting category:', error);
+  }
+};
+
+const copyPreviousMonth = async () => {
+  try {
+    await api.post(
+      `/budgets/${currentMonth.value.format('YYYY-MM')}/copy-previous`,
+      {},
+      getAuthHeaders()
+    );
+    await fetchDashboardData();
+    showCopyModal.value = false;
+  } catch (error) {
+    console.error('Error copying categories:', error);
+  }
+};
 
 const handleLogout = async () => {
   const authStore = useAuthStore()
   await authStore.logout()
-  router.push('/login')
+  await router.push('/login')
 }
 
 onMounted(() => {

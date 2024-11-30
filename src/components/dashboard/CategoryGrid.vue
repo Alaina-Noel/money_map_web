@@ -5,6 +5,4 @@
 </template>
 
 <script setup lang="ts">
-// This is a simple wrapper component that provides the grid layout
-// It uses slots to allow flexible content insertion
 </script>

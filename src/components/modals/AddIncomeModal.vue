@@ -2,6 +2,9 @@
   <Modal @close="$emit('close')">
     <form @submit.prevent="handleSubmit">
       <div class="space-y-4">
+        <div v-if="errors" class="text-red-600 text-sm mb-4">
+          {{ errors }}
+        </div>
         <h2 class="text-xl font-semibold text-gray-900">Add Paycheck</h2>
         <div>
           <label class="block text-sm font-medium text-gray-700">Amount</label>
@@ -58,23 +61,47 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import Modal from './Modal.vue'
 import dayjs from 'dayjs'
+import api from '@/config/api'
 
-const formData = ref({
-  amount: 0,
-  pay_date: dayjs().format('YYYY-MM-DD'),
-  source: '',
-  notes: ''
-})
-
-const emit = defineEmits<{
-  (e: 'save', data: typeof formData.value): void
-  (e: 'close'): void
+const props = defineProps<{
+  initialData: {
+    amount: number
+    pay_date: string
+    source: string
+    notes: string
+  }
 }>()
 
-const handleSubmit = () => {
-  emit('save', formData.value)
+const formData = ref({ ...props.initialData })
+
+watch(() => props.initialData, (newVal) => {
+  formData.value = { ...newVal }
+}, { deep: true })
+
+const emit = defineEmits<{
+  (e: 'close'): void
+  (e: 'fetchDashboardData'): void
+}>()
+
+const errors = ref('')
+
+const handleSubmit = async () => {
+  if (!formData.value.amount || !formData.value.pay_date) {
+    errors.value = 'Please fill in required fields'
+    return
+  }
+  try {
+    await api.post('/paychecks', {
+      ...formData.value,
+      pay_date: dayjs(formData.value.pay_date).format('YYYY-MM-DD')
+    })
+    emit('fetchDashboardData')
+    emit('close')
+  } catch (error) {
+    console.error('Error saving paycheck:', error)
+  }
 }
 </script>

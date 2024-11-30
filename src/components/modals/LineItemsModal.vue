@@ -5,7 +5,6 @@
         {{ category?.name }} - Transactions
       </h2>
 
-      <!-- Add New Transaction Form -->
       <form @submit.prevent="handleSubmit" class="mb-6 p-4 bg-gray-50 rounded-lg">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
@@ -144,7 +143,6 @@ const emit = defineEmits<{
 
 const handleSubmit = () => {
   emit('save', formData.value)
-  // Reset form
   formData.value = {
     description: '',
     amount: 0,
