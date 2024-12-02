@@ -11,6 +11,7 @@
       :expected-income="expectedIncome"
       :actual-income="actualIncome"
       :total-spent="totalSpent"
+      :total-budgeted="totalBudgeted"
       @add-income="showIncomeModal = true"
     />
 
@@ -20,10 +21,12 @@
           v-for="category in categories"
           :key="category.id"
           :category="category"
-          @edit="editCategory"
           @delete="deleteCategory"
+          @edit="editCategory"
+          @delete-line-item="deleteLineItem"
+          @save="saveLineItem"
         />
-        <AddCategoryButton @click="showAddCategoryModal = true" />
+        <AddCategoryButton @click="handleAddCategory" />
       </CategoryGrid>
     </div>
 
@@ -36,9 +39,9 @@
 
     <AddCategoryModal
       v-if="showAddCategoryModal"
-      :initial-data="newCategory"
-      @save="saveCategory"
-      @close="showAddCategoryModal = false"
+      :initial-data="selectedCategory"
+      @save="handleCategorySubmit"
+      @close="handleCloseModal"
     />
 
     <LineItemsModal
@@ -111,9 +114,8 @@ const dashboardData = ref<DashboardData | null>(null);
 const showAddCategoryModal = ref(false)
 const showIncomeModal = ref(false)
 const showLineItemsModal = ref(false)
-const selectedCategory = ref<Category | null>(null);
+const selectedCategory = ref<{ id?: number; name: string; expected_amount: number } | null>(null)
 const lineItems = ref([])
-const newCategory = ref({ name: '', expected_amount: 0 })
 const newPaycheck = ref({ amount: 0, pay_date: '', source: '', notes: '' })
 const showCopyModal = ref(false)
 
@@ -129,6 +131,10 @@ const actualIncome = computed(() => {
 
 const totalSpent = computed(() => {
   return dashboardData.value?.current_month?.total_spent ?? 0
+})
+
+const totalBudgeted = computed(() => {
+  return dashboardData.value?.current_month?.total_budgeted ?? 0
 })
 
 const getAuthHeaders = () => ({
@@ -172,22 +178,26 @@ const handleStartFresh = () => {
 
 const deleteLineItem = async (lineItemId: number) => {
   try {
-    await api.delete(`/line-items/${lineItemId}`);
-
-    if (selectedCategory.value) {
-      await fetchLineItems(selectedCategory.value.id);
-      await fetchDashboardData();
-    }
+    await api.delete(`/line-items/${lineItemId}`, getAuthHeaders());
+    await fetchDashboardData();
+    return true;
   } catch (error) {
     console.error('Error deleting line item:', error);
+    return false;
   }
 };
 
 const viewLineItems = async (category: Category) => {
-  selectedCategory.value = category
-  showLineItemsModal.value = true
-  await fetchLineItems(category.id)
-}
+  selectedCategory.value = category;
+  showLineItemsModal.value = true;
+
+  try {
+    const response = await api.get(`/categories/${category.id}/line-items`, getAuthHeaders());
+    lineItems.value = response.data;
+  } catch (error) {
+    console.error('Error fetching transactions:', error);
+  }
+};
 
 const fetchLineItems = async (categoryId: number) => {
   try {
@@ -202,73 +212,83 @@ const fetchLineItems = async (categoryId: number) => {
   }
 }
 
-interface NewCategory {
-  name: string;
-  expected_amount: number;
-  budget_month?: string;
+const handleAddCategory = () => {
+  selectedCategory.value = {
+    name: '',
+    expected_amount: 0
+  }
+  showAddCategoryModal.value = true
 }
 
-const saveCategory = async (categoryData: NewCategory) => {
+const editCategory = (category: Category) => {
+  selectedCategory.value = {
+    id: category.id,
+    name: category.name,
+    expected_amount: category.expected_amount
+  }
+  showAddCategoryModal.value = true
+}
+
+const handleCategorySubmit = async (categoryData: { id?: number; name: string; expected_amount: number }) => {
   try {
-    await api.post('/categories', {
-      ...categoryData,
-      budget_month: currentMonth.value.format('YYYY-MM-DD')
-    }, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-      }
-    })
+    if (categoryData.id) {
+      await api.put(`/categories/${categoryData.id}`, {
+        name: categoryData.name,
+        expected_amount: categoryData.expected_amount
+      }, getAuthHeaders())
+    } else {
+      const response = await api.post('/categories', {
+        name: categoryData.name,
+        expected_amount: categoryData.expected_amount,
+        budget_month: currentMonth.value.format('YYYY-MM-DD')
+      }, getAuthHeaders())
+
+      console.log('Category creation response:', response.data)
+    }
 
     showAddCategoryModal.value = false
-    newCategory.value = { name: '', expected_amount: 0 }
+    selectedCategory.value = null
     await fetchDashboardData()
-  } catch (error) {
-    console.error('Error saving category:', error)
+  } catch (error: any) {
+    console.error('Error saving category:', error.response?.data || error)
   }
 }
 interface LineItemData {
-  name: string;
+  description: string;
   amount: number;
-  due_date?: string;
+  date: string;
   notes?: string;
+  category_id?: number;
 }
-// Update saveLineItem to include proper headers
-const saveLineItem = async (itemData: LineItemData) => {
+const saveLineItem = async (itemData: LineItemData & { category_id: number }) => {
   try {
-    if (!selectedCategory.value) {
-      console.error('No category selected');
-      return;
-    }
-    await api.post('/line-items', {
-      ...itemData,
-      category_id: selectedCategory.value.id
-    }, {
+    await api.post('/line-items', itemData, {
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
       }
     })
-
-    await fetchLineItems(selectedCategory.value.id)
+    // Fetch updated data
     await fetchDashboardData()
+    return Promise.resolve(true)
   } catch (error) {
     console.error('Error saving line item:', error)
+    return Promise.resolve(false)
   }
-}
-
-// Add a click handler to view transactions
-const editCategory = (category: Category) => {
-  viewLineItems(category)
 }
 
 const deleteCategory = async (categoryId: number) => {
   try {
-    //todo: make this on the backend
     await api.delete(`/categories/${categoryId}`, getAuthHeaders());
     await fetchDashboardData();
   } catch (error) {
     console.error('Error deleting category:', error);
   }
 };
+
+const handleCloseModal = () => {
+  showAddCategoryModal.value = false
+  selectedCategory.value = null
+}
 
 const copyPreviousMonth = async () => {
   try {

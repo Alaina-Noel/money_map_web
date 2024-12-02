@@ -69,16 +69,22 @@ import api from '@/config/api'
 const props = defineProps<{
   initialData: {
     amount: number
-    pay_date: string
+    pay_date?: string;
     source: string
     notes: string
   }
 }>()
 
-const formData = ref({ ...props.initialData })
+const formData = ref({
+  ...props.initialData,
+  pay_date: props.initialData.pay_date || dayjs().format('YYYY-MM-DD')
+})
 
 watch(() => props.initialData, (newVal) => {
-  formData.value = { ...newVal }
+  formData.value = {
+    ...newVal,
+    pay_date: newVal.pay_date || dayjs().format('YYYY-MM-DD')
+  }
 }, { deep: true })
 
 const emit = defineEmits<{

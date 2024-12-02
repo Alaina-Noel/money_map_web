@@ -37,7 +37,7 @@
             type="submit"
             class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700"
           >
-            Save
+            {{ initialData?.id ? 'Update' : 'Create' }} Category
           </button>
         </div>
       </div>
@@ -46,27 +46,46 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import Modal from './Modal.vue'
 
+interface CategoryData {
+  id?: number
+  name: string
+  expected_amount: number
+}
+
 const props = defineProps<{
-  initialData?: {
-    name: string
-    expected_amount: number
-  }
+  initialData?: CategoryData
 }>()
 
-const formData = ref({
+const formData = ref<CategoryData>({
+  id: props.initialData?.id,
   name: props.initialData?.name ?? '',
   expected_amount: props.initialData?.expected_amount ?? 0
 })
 
 const emit = defineEmits<{
-  (e: 'save', data: { name: string; expected_amount: number }): void
+  (e: 'save', data: CategoryData): void
   (e: 'close'): void
 }>()
 
 const handleSubmit = () => {
-  emit('save', formData.value)
+  if (formData.value.expected_amount < 0) {
+    console.error('Expected amount cannot be negative')
+    return
+  }
+
+  emit('save', {
+    id: formData.value.id,
+    name: formData.value.name.trim(),
+    expected_amount: formData.value.expected_amount
+  })
 }
+
+onMounted(() => {
+  if (props.initialData) {
+    formData.value = { ...props.initialData }
+  }
+})
 </script>
